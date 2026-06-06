@@ -1,0 +1,1112 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PIEAS Distillation Simulator - Ethanol/n-Propanol</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+            background: linear-gradient(135deg, #0f2027 0%, #203a43 50%, #2c5364 100%);
+            color: #e0e0e0;
+            min-height: 100vh;
+            overflow-x: hidden;
+        }
+        .header {
+            background: rgba(0,0,0,0.4);
+            padding: 15px 25px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            backdrop-filter: blur(15px);
+            border-bottom: 1px solid rgba(255,255,255,0.1);
+            position: sticky;
+            top: 0;
+            z-index: 100;
+        }
+        .header h1 {
+            font-size: 1.4em;
+            font-weight: 700;
+            background: linear-gradient(90deg, #00d4ff, #7b2cbf);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+        .header .subtitle {
+            font-size: 0.8em;
+            opacity: 0.7;
+            color: #aaa;
+        }
+        .status-bar { display: flex; gap: 15px; align-items: center; }
+        .status-pill {
+            display: flex; align-items: center; gap: 8px;
+            padding: 6px 14px; border-radius: 20px;
+            background: rgba(255,255,255,0.08);
+            font-size: 0.85em;
+            border: 1px solid rgba(255,255,255,0.1);
+        }
+        .status-dot {
+            width: 10px; height: 10px; border-radius: 50%;
+            background: #ff4444;
+            box-shadow: 0 0 8px #ff4444;
+            transition: all 0.3s;
+        }
+        .status-dot.running {
+            background: #00ff88;
+            box-shadow: 0 0 12px #00ff88;
+            animation: pulse-green 1.5s infinite;
+        }
+        .status-dot.paused {
+            background: #ffaa00;
+            box-shadow: 0 0 12px #ffaa00;
+        }
+        @keyframes pulse-green {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+        .main-grid {
+            display: grid; grid-template-columns: 1fr 1fr;
+            gap: 18px; padding: 18px;
+            max-width: 1700px; margin: 0 auto;
+        }
+        .card {
+            background: rgba(20, 30, 48, 0.7);
+            border-radius: 16px;
+            padding: 20px;
+            border: 1px solid rgba(255,255,255,0.08);
+            backdrop-filter: blur(10px);
+            box-shadow: 0 8px 32px rgba(0,0,0,0.3);
+        }
+        .card-title {
+            font-size: 1.05em; font-weight: 600;
+            margin-bottom: 15px; color: #00d4ff;
+            display: flex; align-items: center; gap: 8px;
+            padding-bottom: 10px;
+            border-bottom: 1px solid rgba(255,255,255,0.1);
+        }
+        .btn-group { display: flex; gap: 10px; margin-bottom: 18px; flex-wrap: wrap; }
+        .btn {
+            padding: 10px 22px; border: none; border-radius: 10px;
+            cursor: pointer; font-weight: 600; font-size: 0.9em;
+            transition: all 0.25s;
+            display: flex; align-items: center; gap: 6px;
+        }
+        .btn:hover { transform: translateY(-2px); box-shadow: 0 5px 20px rgba(0,0,0,0.3); }
+        .btn:active { transform: translateY(0); }
+        .btn-start { background: linear-gradient(135deg, #00c853, #00a344); color: white; }
+        .btn-pause { background: linear-gradient(135deg, #ff9100, #e68200); color: white; }
+        .btn-stop { background: linear-gradient(135deg, #ff1744, #d50000); color: white; }
+        .btn-reset { background: linear-gradient(135deg, #7c4dff, #651fff); color: white; }
+        .btn-trend { background: rgba(0, 212, 255, 0.15); color: #00d4ff; border: 1px solid rgba(0,212,255,0.3); }
+        .btn-trend:hover { background: rgba(0, 212, 255, 0.25); }
+        .btn-trend.active { background: #00d4ff; color: #0f2027; }
+        .alarm-card {
+            background: rgba(255, 152, 0, 0.08);
+            border: 1px solid rgba(255, 152, 0, 0.3);
+            transition: all 0.3s;
+        }
+        .alarm-card.triggered {
+            background: rgba(255, 23, 68, 0.12);
+            border-color: #ff1744;
+            animation: alarm-pulse 1s infinite;
+        }
+        @keyframes alarm-pulse {
+            0%, 100% { border-color: #ff1744; box-shadow: 0 0 15px rgba(255,23,68,0.2); }
+            50% { border-color: #ff5252; box-shadow: 0 0 25px rgba(255,23,68,0.4); }
+        }
+        .alarm-grid { display: grid; grid-template-columns: 1fr; gap: 6px; }
+        .alarm-row {
+            display: flex; justify-content: space-between; align-items: center;
+            padding: 7px 12px; border-radius: 8px;
+            background: rgba(255,255,255,0.03);
+            font-size: 0.82em; transition: all 0.3s;
+            border-left: 3px solid #4caf50;
+        }
+        .alarm-row.ok { border-left-color: #4caf50; opacity: 0.6; }
+        .alarm-row.warning { border-left-color: #ff9800; background: rgba(255,152,0,0.1); }
+        .alarm-row.danger {
+            border-left-color: #ff1744;
+            background: rgba(255,23,68,0.15);
+            animation: danger-flash 0.5s infinite alternate;
+            font-weight: 600;
+        }
+        @keyframes danger-flash {
+            from { background: rgba(255,23,68,0.15); }
+            to { background: rgba(255,23,68,0.3); }
+        }
+        .alarm-status { font-weight: 700; font-size: 0.75em; padding: 2px 8px; border-radius: 10px; }
+        .alarm-status.ok { color: #4caf50; }
+        .alarm-status.danger { color: #ff1744; }
+        .gauge-grid {
+            display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+            gap: 12px;
+        }
+        .gauge {
+            text-align: center; padding: 14px 10px;
+            background: rgba(255,255,255,0.03);
+            border-radius: 12px;
+            border: 1px solid rgba(255,255,255,0.06);
+            transition: all 0.3s;
+            position: relative;
+            overflow: hidden;
+        }
+        .gauge:hover { transform: scale(1.03); background: rgba(255,255,255,0.06); }
+        .gauge::before {
+            content: '';
+            position: absolute;
+            top: 0; left: 0; right: 0;
+            height: 3px;
+            background: linear-gradient(90deg, #00d4ff, #7b2cbf);
+            opacity: 0.5;
+        }
+        .gauge.alarm::before { background: #ff1744; opacity: 1; }
+        .gauge-label { font-size: 0.72em; color: #888; margin-bottom: 6px; font-weight: 500; }
+        .gauge-value { font-size: 1.6em; font-weight: 700; color: #fff; font-family: 'SF Mono', monospace; }
+        .gauge-unit { font-size: 0.7em; color: #666; margin-top: 2px; }
+        .gauge.alarm { background: rgba(255,23,68,0.1); border-color: rgba(255,23,68,0.3); }
+        .gauge.alarm .gauge-value { color: #ff1744; }
+        .ctrl-group {
+            margin-bottom: 14px; padding: 14px;
+            background: rgba(255,255,255,0.03);
+            border-radius: 12px;
+            border-left: 3px solid #00d4ff;
+            transition: all 0.3s;
+        }
+        .ctrl-group:hover { background: rgba(255,255,255,0.05); }
+        .ctrl-group.auto-mode { border-left-color: #00c853; background: rgba(0,200,83,0.08); }
+        .ctrl-header {
+            display: flex; justify-content: space-between; align-items: center;
+            margin-bottom: 10px;
+        }
+        .ctrl-name { font-weight: 600; font-size: 0.92em; color: #e0e0e0; }
+        .ctrl-meta { font-size: 0.72em; color: #888; margin-top: 2px; }
+        .ctrl-meta span { color: #00d4ff; font-weight: 600; }
+        .toggle-wrap {
+            display: flex; align-items: center; gap: 8px;
+            font-size: 0.8em;
+        }
+        .toggle-switch {
+            position: relative;
+            width: 44px; height: 22px;
+            background: rgba(255,255,255,0.1);
+            border-radius: 11px;
+            cursor: pointer;
+            transition: background 0.3s;
+        }
+        .toggle-switch.on { background: #00c853; }
+        .toggle-switch::after {
+            content: '';
+            position: absolute;
+            top: 2px; left: 2px;
+            width: 18px; height: 18px;
+            background: white;
+            border-radius: 50%;
+            transition: transform 0.3s;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.3);
+        }
+        .toggle-switch.on::after { transform: translateX(22px); }
+        .slider-wrap { display: flex; align-items: center; gap: 12px; }
+        .slider {
+            flex: 1;
+            -webkit-appearance: none;
+            height: 6px;
+            border-radius: 3px;
+            background: rgba(255,255,255,0.1);
+            outline: none;
+        }
+        .slider::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            width: 18px; height: 18px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, #00d4ff, #7b2cbf);
+            cursor: pointer;
+            box-shadow: 0 2px 8px rgba(0,212,255,0.4);
+            transition: transform 0.2s;
+        }
+        .slider::-webkit-slider-thumb:hover { transform: scale(1.2); }
+        .slider-val {
+            min-width: 55px;
+            text-align: center; font-weight: 700;
+            color: #00d4ff; font-size: 0.9em;
+            font-family: monospace;
+            background: rgba(0,0,0,0.3);
+            padding: 4px 8px;
+            border-radius: 6px;
+        }
+        .pid-panel {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 8px;
+            margin-top: 10px;
+            padding-top: 10px;
+            border-top: 1px solid rgba(255,255,255,0.05);
+        }
+        .pid-field { display: flex; flex-direction: column; gap: 3px; }
+        .pid-field label { font-size: 0.7em; color: #888; }
+        .pid-field input {
+            padding: 5px; border: 1px solid rgba(255,255,255,0.1);
+            border-radius: 6px; background: rgba(0,0,0,0.2);
+            color: #e0e0e0; font-size: 0.85em; text-align: center;
+        }
+        .pid-field input:focus {
+            outline: none; border-color: #00d4ff;
+        }
+        .pid-apply {
+            padding: 5px 10px;
+            background: rgba(0,212,255,0.15);
+            border: 1px solid rgba(0,212,255,0.3);
+            color: #00d4ff; border-radius: 6px;
+            cursor: pointer; font-size: 0.8em;
+            font-weight: 600; transition: all 0.2s;
+        }
+        .pid-apply:hover { background: rgba(0,212,255,0.3); }
+        .chart-wrap {
+            position: relative;
+            height: 320px; margin-top: 10px;
+        }
+        .pfd-wrap {
+            position: relative;
+            height: 520px;
+            background: linear-gradient(180deg, rgba(15,32,39,0.8) 0%, rgba(32,58,67,0.6) 100%);
+            border-radius: 12px;
+            overflow: hidden;
+            border: 1px solid rgba(255,255,255,0.08);
+        }
+        .pfd-eq {
+            position: absolute;
+            border: 2px solid rgba(0,212,255,0.5);
+            background: rgba(0,212,255,0.08);
+            border-radius: 10px;
+            display: flex; flex-direction: column;
+            align-items: center; justify-content: center;
+            font-size: 0.7em; color: #00d4ff;
+            font-weight: 600; transition: all 0.3s;
+            cursor: pointer; padding: 4px;
+        }
+        .pfd-eq:hover {
+            background: rgba(0,212,255,0.15);
+            transform: scale(1.05);
+            z-index: 10;
+        }
+        .pfd-eq.alarm { border-color: #ff1744; background: rgba(255,23,68,0.15); animation: pfd-alarm 1s infinite; }
+        @keyframes pfd-alarm { 0%,100% { box-shadow: 0 0 10px rgba(255,23,68,0.3); } 50% { box-shadow: 0 0 20px rgba(255,23,68,0.6); } }
+        .pfd-tag {
+            position: absolute;
+            top: -10px; left: 5px;
+            background: linear-gradient(135deg, #00d4ff, #7b2cbf);
+            color: white; padding: 2px 7px;
+            border-radius: 5px;
+            font-size: 0.65em; font-weight: 700;
+        }
+        .pfd-val { font-size: 0.85em; color: #fff; margin-top: 2px; font-family: monospace; }
+        .pfd-pipe {
+            position: absolute;
+            background: rgba(144,164,174,0.3);
+            border-radius: 2px;
+        }
+        .pfd-pipe.flow { background: rgba(0,212,255,0.4); animation: flow-anim 2s infinite; }
+        @keyframes flow-anim { 0% { opacity: 0.4; } 50% { opacity: 0.8; } 100% { opacity: 0.4; } }
+        .legend-bar {
+            display: flex; gap: 20px;
+            margin-top: 12px;
+            font-size: 0.78em; flex-wrap: wrap;
+        }
+        .legend-item { display: flex; align-items: center; gap: 6px; }
+        .legend-dot { width: 12px; height: 12px; border-radius: 3px; }
+        .full-span { grid-column: 1 / -1; }
+        @media (max-width: 1100px) {
+            .main-grid { grid-template-columns: 1fr; }
+        }
+        ::-webkit-scrollbar { width: 8px; }
+        ::-webkit-scrollbar-track { background: rgba(0,0,0,0.2); }
+        ::-webkit-scrollbar-thumb { background: rgba(0,212,255,0.3); border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: rgba(0,212,255,0.5); }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <div>
+            <h1>PIEAS Distillation Simulator</h1>
+            <div class="subtitle">Ethanol / n-Propanol | 11-Tray Column | Remote Smart Experiment</div>
+        </div>
+        <div class="status-bar">
+            <div class="status-pill">
+                <div class="status-dot" id="sim-dot"></div>
+                <span id="sim-status">Stopped</span>
+            </div>
+            <div class="status-pill">
+                <span>Time: <span id="sim-time">0.0</span>s</span>
+            </div>
+            <div class="status-pill">
+                <span>xD: <span id="header-xD" style="color:#00d4ff;font-weight:700;">0.20</span></span>
+            </div>
+        </div>
+    </div>
+
+    <div class="main-grid">
+        <!-- Controls -->
+        <div class="card">
+            <div class="card-title">Simulation Control</div>
+            <div class="btn-group">
+                <button class="btn btn-start" onclick="simControl('start')">Start</button>
+                <button class="btn btn-pause" onclick="simControl('pause')">Pause</button>
+                <button class="btn btn-stop" onclick="simControl('stop')">Stop</button>
+                <button class="btn btn-reset" onclick="simControl('reset')">Reset</button>
+            </div>
+
+            <div class="card-title" style="margin-top:15px;">Safety Interlocks & Alarms</div>
+            <div class="alarm-card" id="alarm-card">
+                <div class="alarm-grid" id="alarm-grid"></div>
+            </div>
+        </div>
+
+        <!-- Measurements -->
+        <div class="card">
+            <div class="card-title">Process Measurements (PV)</div>
+            <div class="gauge-grid" id="gauges"></div>
+        </div>
+
+        <!-- Manual Controls -->
+        <div class="card">
+            <div class="card-title">Manual Controls (MV) + PID</div>
+            <div id="controls"></div>
+        </div>
+
+        <!-- Trends -->
+        <div class="card full-span">
+            <div class="card-title">Real-Time Trends</div>
+            <div class="btn-group">
+                <button class="btn btn-trend active" onclick="setTrend('temperatures')" id="btn-temp">Temperatures</button>
+                <button class="btn btn-trend" onclick="setTrend('flows')" id="btn-flow">Flows</button>
+                <button class="btn btn-trend" onclick="setTrend('levels')" id="btn-level">Levels</button>
+                <button class="btn btn-trend" onclick="setTrend('compositions')" id="btn-comp">Compositions</button>
+                <button class="btn btn-trend" onclick="setTrend('pressures')" id="btn-press">Pressures</button>
+            </div>
+            <div class="chart-wrap">
+                <canvas id="trendChart"></canvas>
+            </div>
+        </div>
+
+        <!-- PFD -->
+        <div class="card full-span">
+            <div class="card-title">Process Flow Diagram</div>
+            <div class="pfd-wrap" id="pfd"></div>
+            <div class="legend-bar">
+                <div class="legend-item"><div class="legend-dot" style="background:rgba(0,212,255,0.5);"></div><span>Equipment</span></div>
+                <div class="legend-item"><div class="legend-dot" style="background:#00c853;"></div><span>Normal</span></div>
+                <div class="legend-item"><div class="legend-dot" style="background:#ff9800;"></div><span>Warning</span></div>
+                <div class="legend-item"><div class="legend-dot" style="background:#ff1744;"></div><span>Alarm</span></div>
+                <div class="legend-item"><div class="legend-dot" style="background:rgba(0,212,255,0.4);animation:flow-anim 2s infinite;"></div><span>Flow</span></div>
+            </div>
+        </div>
+    </div>
+
+<script>
+// ======== PHYSICAL PROPERTIES ========
+const Antoine = {
+    ethanol: {A: 8.20417, B: 1642.89, C: 230.300},
+    propanol: {A: 7.99786, B: 1569.70, C: 209.500}
+};
+
+function vaporPressure(T, comp) {
+    const a = Antoine[comp];
+    return Math.pow(10, a.A - a.B / (T + a.C));
+}
+
+function relativeVolatility(T) {
+    return vaporPressure(T, 'ethanol') / vaporPressure(T, 'propanol');
+}
+
+function bubblePoint(x, Ptotal) {
+    let T = 85;
+    for (let i = 0; i < 20; i++) {
+        const P1 = vaporPressure(T, 'ethanol');
+        const P2 = vaporPressure(T, 'propanol');
+        const Pcalc = x * P1 + (1 - x) * P2;
+        if (Math.abs(Pcalc - Ptotal) < 0.1) break;
+        T += (Ptotal - Pcalc) * 0.01;
+    }
+    return T;
+}
+
+// ======== PID CONTROLLER ========
+class PIDController {
+    constructor(Kp, Ki, Kd, sp, outMin, outMax) {
+        this.Kp = Kp; this.Ki = Ki; this.Kd = Kd;
+        this.setpoint = sp;
+        this.outMin = outMin; this.outMax = outMax;
+        this.integral = 0;
+        this.prevErr = 0;
+        this.prevTime = null;
+        this.output = 0;
+        this.auto = false;
+    }
+
+    reset() {
+        this.integral = 0;
+        this.prevErr = 0;
+        this.prevTime = null;
+        this.output = 0;
+    }
+
+    compute(pv, t) {
+        if (!this.auto) return this.output;
+        if (this.prevTime === null) this.prevTime = t;
+        const dt = Math.max((t - this.prevTime) / 1000, 0.01);
+        this.prevTime = t;
+
+        const err = this.setpoint - pv;
+        this.integral += err * dt;
+        this.integral = Math.max(-100, Math.min(100, this.integral));
+
+        const dErr = (err - this.prevErr) / dt;
+        this.prevErr = err;
+
+        let out = this.Kp * err + this.Ki * this.integral + this.Kd * dErr;
+        out = Math.max(this.outMin, Math.min(this.outMax, out));
+        this.output = out;
+        return out;
+    }
+}
+
+// ======== ALARM SYSTEM ========
+class AlarmSystem {
+    constructor() {
+        this.alarms = [
+            {id: 1, name: 'T5 > 38C', check: s => s.T5 > 38, action: 'E2', val: 0, resp: 'Stop reboiler heating'},
+            {id: 2, name: 'L1 < 50 mm', check: s => s.L1 < 50, action: 'S1', val: 0, resp: 'Stop Feed Pump'},
+            {id: 3, name: 'L4 > 250 mm', check: s => s.L4 > 250, action: 'E2', val: 0, resp: 'Stop reboiler heating'},
+            {id: 4, name: 'L4 < 50 mm', check: s => s.L4 < 50, action: 'S2', val: 0, resp: 'Stop Reflux Pump'},
+            {id: 5, name: 'L3 > 500 mm', check: s => s.L3 > 500, action: 'S1', val: 0, resp: 'Stop Feed Pump'},
+            {id: 6, name: 'L3 < 200 mm', check: s => s.L3 < 200, action: 'E2', val: 0, resp: 'Stop reboiler heating'},
+            {id: 7, name: 'F1 approx 0', check: s => s.F1 < 0.1, action: 'E1', val: 0, resp: 'Stop feed heating'},
+            {id: 8, name: 'L5 > 150 mm', check: s => s.L5 > 150, action: 'LV1', val: 0, resp: 'Close LV1'},
+            {id: 9, name: 'L6 > 150 mm', check: s => s.L6 > 150, action: 'S3', val: 0, resp: 'Stop Bottoms Pump'},
+        ];
+        this.active = new Set();
+        this.interlocks = {};
+    }
+
+    check(state) {
+        this.active.clear();
+        this.interlocks = {};
+        for (const a of this.alarms) {
+            if (a.check(state)) {
+                this.active.add(a.id);
+                this.interlocks[a.action] = a.val;
+            }
+        }
+        return this.interlocks;
+    }
+
+    reset() {
+        this.active.clear();
+        this.interlocks = {};
+    }
+}
+
+// ======== DISTILLATION PLANT ========
+class DistillationPlant {
+    constructor() {
+        this.dt = 0.1;
+        this.time = 0;
+        this.running = false;
+        this.paused = false;
+
+        this.maxE2 = 5000;
+        this.maxE1 = 400;
+        this.maxF1 = 10;
+        this.maxF2 = 16;
+        this.maxF3 = 6;
+        this.maxF4 = 5;
+
+        this.state = {
+            T1: 20, T2: 20, T3: 20, T4: 20, T5: 20,
+            T6: 20, T7: 20, T8: 20, T9: 20, T10: 20,
+            F1: 0, F2: 0, F3: 0, F4: 0, F5: 0, F6: 0,
+            L1: 400, L2: 1, L3: 350, L4: 150, L5: 0, L6: 0,
+            P1: 0,
+            xD: 0.2, xB: 0.2, xF: 0.2
+        };
+
+        this.mv = {
+            E1: 0, E2: 0, FV1: 0, FV2: 0, LV1: 0,
+            S1: 0, S2: 0, S3: 0, MV1: 50
+        };
+
+        this.sv = {
+            T8: 25, E2: 0, F1: 0, F2: 0, L4: 150, L3: 350
+        };
+
+        this.pids = {
+            T8: new PIDController(2, 0.5, 0.1, 25, 0, 100),
+            E2: new PIDController(1, 0.2, 0.05, 50, 0, 100),
+            F1: new PIDController(5, 1, 0.2, 5, 0, 100),
+            F2: new PIDController(5, 1, 0.2, 8, 0, 100),
+            L4: new PIDController(2, 0.5, 0.1, 150, 0, 100),
+            L3: new PIDController(3, 0.8, 0.15, 350, 0, 50)
+        };
+
+        this.alarms = new AlarmSystem();
+        this.history = [];
+        this.maxHist = 200;
+        this.trayX = new Array(11).fill(0.2);
+        this.trayT = new Array(11).fill(20);
+    }
+
+    start() { this.running = true; this.paused = false; }
+    pause() { this.paused = !this.paused; }
+
+    stop() {
+        this.running = false;
+        this.paused = false;
+        this.time = 0;
+        this.alarms.reset();
+        this.history = [];
+        Object.assign(this.state, {
+            T1: 20, T2: 20, T3: 20, T4: 20, T5: 20,
+            T6: 20, T7: 20, T8: 20, T9: 20, T10: 20,
+            F1: 0, F2: 0, F3: 0, F4: 0, F5: 0, F6: 0,
+            L1: 400, L2: 1, L3: 350, L4: 150, L5: 0, L6: 0,
+            P1: 0, xD: 0.2, xB: 0.2, xF: 0.2
+        });
+        Object.keys(this.mv).forEach(k => this.mv[k] = k === 'MV1' ? 50 : 0);
+        this.trayX.fill(0.2);
+        this.trayT.fill(20);
+    }
+
+    reset() { this.stop(); }
+
+    setMV(tag, val) {
+        const pidMap = {E1: 'T8', E2: 'E2', FV1: 'F1', FV2: 'F2', LV1: 'L4', S3: 'L3'};
+        if (pidMap[tag] && this.pids[pidMap[tag]].auto) return false;
+        if (tag in this.mv) {
+            this.mv[tag] = Math.max(0, Math.min(tag.startsWith('S') ? 50 : 100, val));
+            return true;
+        }
+        return false;
+    }
+
+    setSV(tag, val) {
+        if (tag in this.sv) {
+            this.sv[tag] = val;
+            if (this.pids[tag]) this.pids[tag].setpoint = val;
+            return true;
+        }
+        return false;
+    }
+
+    setPIDMode(tag, auto) {
+        if (this.pids[tag]) {
+            this.pids[tag].auto = auto;
+            if (auto) this.pids[tag].reset();
+            return true;
+        }
+        return false;
+    }
+
+    setPIDTuning(tag, Kp, Ki, Kd) {
+        if (this.pids[tag]) {
+            this.pids[tag].Kp = Kp;
+            this.pids[tag].Ki = Ki;
+            this.pids[tag].Kd = Kd;
+            return true;
+        }
+        return false;
+    }
+
+    updatePIDs() {
+        const t = Date.now();
+        if (this.pids.T8.auto) this.mv.E1 = this.pids.T8.compute(this.state.T8, t);
+        if (this.pids.E2.auto) this.mv.E2 = this.pids.E2.compute(this.mv.E2, t);
+        if (this.pids.F1.auto) this.mv.FV1 = this.pids.F1.compute(this.state.F1, t);
+        if (this.pids.F2.auto) this.mv.FV2 = this.pids.F2.compute(this.state.F2, t);
+        if (this.pids.L4.auto) this.mv.LV1 = this.pids.L4.compute(this.state.L4, t);
+        if (this.pids.L3.auto) this.mv.S3 = this.pids.L3.compute(this.state.L3, t);
+    }
+
+    calcFlows() {
+        const s = this.state, m = this.mv;
+        s.F1 = this.maxF1 * (m.FV1 / 100) * (m.S1 / 50);
+        s.F2 = this.maxF2 * (m.FV2 / 100) * (m.S2 / 50);
+        s.F3 = this.maxF3 * (m.LV1 / 100);
+        s.F4 = this.maxF4 * (m.S3 / 50);
+        s.F5 = s.F4;
+        s.F6 = 50 * (m.MV1 / 100);
+    }
+
+    calcTemps() {
+        const s = this.state, m = this.mv;
+        const Troom = 20;
+
+        if (s.F1 > 0.1) {
+            const power = (m.E1 / 100) * this.maxE1;
+            const massFlow = s.F1 * 0.8;
+            s.T8 = Troom + (power * 3.6) / (massFlow * 2.5);
+        } else {
+            s.T8 = Troom;
+        }
+        s.T8 = Math.min(s.T8, 85);
+
+        if (m.E2 > 0) {
+            const powerKW = (m.E2 / 100) * this.maxE2 / 1000;
+            const baseT = 78;
+            const rise = powerKW * 3;
+
+            s.T4 = Math.min(baseT + rise, 97);
+            s.T3 = s.T4 - 2;
+            s.T2 = s.T4 - 8;
+            s.T1 = s.T4 - 15;
+            s.T1 = Math.max(s.T1, 20);
+
+            s.T5 = 25 + powerKW * 2;
+            s.T6 = 25;
+            s.T7 = s.T6;
+            s.T9 = 20 + powerKW * 1.5;
+        } else {
+            ['T1','T2','T3','T4'].forEach(k => { s[k] += (Troom - s[k]) * 0.01; });
+            s.T5 = Math.max(20, s.T5 - 0.05);
+            s.T9 = 20;
+        }
+
+        for (let i = 0; i < 11; i++) {
+            this.trayT[i] = bubblePoint(this.trayX[i]);
+        }
+        s.T2 = this.trayT[7];
+        s.T3 = this.trayT[10];
+    }
+
+    calcLevels() {
+        const s = this.state, m = this.mv, dt = this.dt;
+
+        const dL1 = -s.F1 * 0.5;
+        s.L1 = Math.max(0, Math.min(500, s.L1 + dL1 * dt));
+
+        const liqIn = s.F1 + s.F2 * 0.3;
+        const vaporOut = s.F2 + s.F3;
+        const dL3 = (liqIn - s.F4 - vaporOut * 0.1) * 0.3;
+        s.L3 = Math.max(0, Math.min(650, s.L3 + dL3 * dt));
+
+        const condIn = s.F2 + s.F3;
+        const dL4 = (condIn - s.F2 - s.F3 + (m.E2 > 0 ? 1 : -0.5)) * 0.8;
+        s.L4 = Math.max(0, Math.min(300, s.L4 + dL4 * dt));
+
+        const dL5 = s.F3 * 0.4;
+        s.L5 = Math.max(0, Math.min(200, s.L5 + dL5 * dt));
+
+        const dL6 = s.F4 * 0.4;
+        s.L6 = Math.max(0, Math.min(200, s.L6 + dL6 * dt));
+
+        s.L2 = s.F1 > 0.5 ? 1 : 0;
+    }
+
+    calcPressure() {
+        this.state.P1 = Math.min(10, this.state.L3 * 0.015);
+    }
+
+    calcCompositions() {
+        const s = this.state, m = this.mv;
+        const totalVapor = s.F2 + s.F3;
+
+        if (m.E2 > 5 && totalVapor > 0.5) {
+            const RR = s.F2 / Math.max(s.F3, 0.1);
+            const sep = Math.min(RR / 5, 0.9);
+
+            s.xD = Math.min(0.2 + sep * 0.75, 0.98);
+            s.xB = Math.max(0.2 - sep * 0.18, 0.02);
+
+            for (let i = 0; i < 11; i++) {
+                const frac = i / 10;
+                this.trayX[i] = s.xB + (s.xD - s.xB) * frac;
+            }
+        } else {
+            s.xD = 0.2;
+            s.xB = 0.2;
+            this.trayX.fill(0.2);
+        }
+    }
+
+    step() {
+        if (!this.running || this.paused) return;
+
+        this.updatePIDs();
+        this.calcFlows();
+        this.calcTemps();
+        this.calcLevels();
+        this.calcPressure();
+        this.calcCompositions();
+
+        const locks = this.alarms.check(this.state);
+        Object.assign(this.mv, locks);
+
+        this.time += this.dt;
+
+        this.history.push({
+            time: this.time,
+            ...this.state,
+            ...this.mv
+        });
+        if (this.history.length > this.maxHist) this.history.shift();
+    }
+}
+
+// ======== GLOBAL INSTANCE ========
+const plant = new DistillationPlant();
+let simInterval = null;
+
+// ======== UI DEFINITIONS ========
+const gaugeDefs = [
+    {key: 'T1', label: 'T1 Overhead', unit: 'C', danger: v => v > 90},
+    {key: 'T2', label: 'T2 Tray 8', unit: 'C'},
+    {key: 'T3', label: 'T3 Tray 11', unit: 'C'},
+    {key: 'T4', label: 'T4 Bottoms', unit: 'C'},
+    {key: 'T5', label: 'T5 Cond.Vent', unit: 'C', danger: v => v > 38},
+    {key: 'T8', label: 'T8 Feed', unit: 'C'},
+    {key: 'F1', label: 'F1 Feed', unit: 'L/h', danger: v => v < 0.1},
+    {key: 'F2', label: 'F2 Reflux', unit: 'L/h'},
+    {key: 'F3', label: 'F3 Product', unit: 'L/h'},
+    {key: 'F4', label: 'F4 Bottoms', unit: 'L/h'},
+    {key: 'L3', label: 'L3 Bottoms', unit: 'mm', danger: v => v < 200 || v > 500},
+    {key: 'L4', label: 'L4 Condensate', unit: 'mm', danger: v => v < 50 || v > 250},
+    {key: 'L1', label: 'L1 Feed Tank', unit: 'mm', danger: v => v < 50},
+    {key: 'L5', label: 'L5 Overhead', unit: 'mm', danger: v => v > 150},
+    {key: 'L6', label: 'L6 Bottoms', unit: 'mm', danger: v => v > 150},
+    {key: 'P1', label: 'P1 Pressure', unit: 'kPa'},
+    {key: 'xD', label: 'xD Overhead', unit: 'EtOH'},
+    {key: 'xB', label: 'xB Bottoms', unit: 'EtOH'},
+];
+
+const ctrlDefs = [
+    {tag: 'E2', label: 'Reboiler Power (E2)', pid: 'E2', sv: 'E2', unit: '%', max: 100},
+    {tag: 'FV1', label: 'Feed Valve (FV1)', pid: 'F1', sv: 'F1', unit: '%', max: 100},
+    {tag: 'FV2', label: 'Reflux Valve (FV2)', pid: 'F2', sv: 'F2', unit: '%', max: 100},
+    {tag: 'LV1', label: 'Product Valve (LV1)', pid: 'L4', sv: 'L4', unit: '%', max: 100},
+    {tag: 'S3', label: 'Bottoms Pump (S3)', pid: 'L3', sv: 'L3', unit: 'Hz', max: 50},
+    {tag: 'E1', label: 'Preheater (E1)', pid: 'T8', sv: 'T8', unit: '%', max: 100},
+    {tag: 'S1', label: 'Feed Pump (S1)', pid: null, sv: null, unit: 'Hz', max: 50},
+    {tag: 'S2', label: 'Reflux Pump (S2)', pid: null, sv: null, unit: 'Hz', max: 50},
+    {tag: 'MV1', label: 'Cooling Water (MV1)', pid: null, sv: null, unit: '%', max: 100},
+];
+
+// ======== INIT UI ========
+function initUI() {
+    // Gauges
+    document.getElementById('gauges').innerHTML = gaugeDefs.map(g => `
+        <div class="gauge" id="gauge-${g.key}">
+            <div class="gauge-label">${g.label}</div>
+            <div class="gauge-value" id="val-${g.key}">--</div>
+            <div class="gauge-unit">${g.unit}</div>
+        </div>
+    `).join('');
+
+    // Controls
+    document.getElementById('controls').innerHTML = ctrlDefs.map(c => `
+        <div class="ctrl-group" id="ctrl-${c.tag}">
+            <div class="ctrl-header">
+                <div>
+                    <div class="ctrl-name">${c.label}</div>
+                    <div class="ctrl-meta">
+                        ${c.pid ? `PV: ${c.pid} | SV: <span id="sv-${c.sv}">${plant.sv[c.sv]}</span> ${c.unit}` : 'Manual only'}
+                    </div>
+                </div>
+                ${c.pid ? `
+                <div class="toggle-wrap">
+                    <span style="font-size:0.75em;color:#888;">PID Auto</span>
+                    <div class="toggle-switch" id="toggle-${c.pid}" onclick="togglePID('${c.pid}')"></div>
+                </div>
+                ` : ''}
+            </div>
+            <div class="slider-wrap">
+                <input type="range" class="slider" id="slider-${c.tag}" min="0" max="${c.max}" value="0" 
+                       oninput="setMV('${c.tag}', this.value)">
+                <div class="slider-val" id="mv-${c.tag}">0${c.unit}</div>
+            </div>
+            ${c.pid ? `
+            <div class="pid-panel" id="pid-panel-${c.pid}" style="display:none;">
+                <div class="pid-field"><label>Kp</label><input type="number" id="Kp-${c.pid}" value="${plant.pids[c.pid].Kp}" step="0.1" onchange="applyPID('${c.pid}')"></div>
+                <div class="pid-field"><label>Ki</label><input type="number" id="Ki-${c.pid}" value="${plant.pids[c.pid].Ki}" step="0.1" onchange="applyPID('${c.pid}')"></div>
+                <div class="pid-field"><label>Kd</label><input type="number" id="Kd-${c.pid}" value="${plant.pids[c.pid].Kd}" step="0.01" onchange="applyPID('${c.pid}')"></div>
+                <button class="pid-apply" onclick="applyPID('${c.pid}')">Apply</button>
+            </div>
+            ` : ''}
+        </div>
+    `).join('');
+
+    // Alarms
+    document.getElementById('alarm-grid').innerHTML = plant.alarms.alarms.map(a => `
+        <div class="alarm-row ok" id="alarm-row-${a.id}">
+            <span>Alarm ${a.id}: ${a.name} &rarr; ${a.resp}</span>
+            <span class="alarm-status ok" id="alarm-st-${a.id}">OK</span>
+        </div>
+    `).join('');
+
+    // PFD
+    const pfd = document.getElementById('pfd');
+    const eqs = [
+        {id: 'pfd-cond', cls: 'condenser', x: 50, y: 5, w: 90, h: 45, tag: 'Condenser', extra: 'Shell&Tube'},
+        {id: 'pfd-col', cls: 'column', x: 50, y: 30, w: 70, h: 200, tag: 'Column', extra: '11 Trays'},
+        {id: 'pfd-reb', cls: 'reboiler', x: 50, y: 72, w: 100, h: 55, tag: 'Reboiler', extra: '219x400'},
+        {id: 'pfd-feed', cls: 'feed-tank', x: 12, y: 40, w: 80, h: 60, tag: 'Feed Tank', extra: '350x400'},
+        {id: 'pfd-pre', cls: 'preheater', x: 28, y: 48, w: 55, h: 35, tag: 'Preheater', extra: '50x260'},
+        {id: 'pfd-condrec', cls: 'condensate-receiver', x: 78, y: 12, w: 60, h: 40, tag: 'Cond.Rec.', extra: '50x180'},
+        {id: 'pfd-over', cls: 'overhead-receiver', x: 90, y: 28, w: 70, h: 50, tag: 'Overhead Rec.', extra: '150x260'},
+        {id: 'pfd-botrec', cls: 'bottoms-receiver', x: 78, y: 75, w: 70, h: 50, tag: 'Bottoms Rec.', extra: '150x260'},
+        {id: 'pfd-hex', cls: 'heat-exchanger', x: 68, y: 72, w: 55, h: 35, tag: 'Bottoms HEX', extra: '0.05m2'},
+    ];
+
+    pfd.innerHTML = eqs.map(e => `
+        <div class="pfd-eq ${e.cls}" id="${e.id}" style="left:${e.x}%;top:${e.y}%;width:${e.w}px;height:${e.h}px;transform:translateX(-50%);">
+            <span class="pfd-tag">${e.tag}</span>
+            <div>${e.extra}</div>
+            <div class="pfd-val" id="${e.id}-val">--</div>
+        </div>
+    `).join('') + `
+        <div class="pfd-pipe flow" style="left:16%;top:43%;width:12%;transform:rotate(-10deg);height:3px;"></div>
+        <div class="pfd-pipe flow" style="left:31%;top:50%;width:15%;transform:rotate(5deg);height:3px;"></div>
+        <div class="pfd-pipe" style="left:50%;top:5%;width:3px;height:25%;"></div>
+        <div class="pfd-pipe flow" style="left:54%;top:8%;width:20%;transform:rotate(5deg);height:3px;"></div>
+        <div class="pfd-pipe flow" style="left:50%;top:62%;width:3px;height:10%;"></div>
+        <div class="pfd-pipe flow" style="left:54%;top:72%;width:12%;height:3px;"></div>
+        <div class="pfd-pipe" style="left:50%;top:20%;width:28%;transform:rotate(75deg);transform-origin:left;height:3px;"></div>
+    `;
+}
+
+// ======== CHART ========
+let trendChart = null;
+let currentTrend = 'temperatures';
+
+const trendConfig = {
+    temperatures: {keys: ['T1','T2','T3','T4','T5','T8'], colors: ['#e53935','#fb8c00','#fdd835','#43a047','#1e88e5','#8e24aa']},
+    flows: {keys: ['F1','F2','F3','F4','F6'], colors: ['#e53935','#fb8c00','#fdd835','#43a047','#1e88e5']},
+    levels: {keys: ['L1','L3','L4','L5','L6'], colors: ['#e53935','#fb8c00','#fdd835','#43a047','#1e88e5']},
+    compositions: {keys: ['xD','xB','xF'], colors: ['#43a047','#e53935','#1e88e5']},
+    pressures: {keys: ['P1'], colors: ['#e53935']}
+};
+
+function initChart() {
+    const ctx = document.getElementById('trendChart').getContext('2d');
+    const cfg = trendConfig[currentTrend];
+
+    trendChart = new Chart(ctx, {
+        type: 'line',
+        data: {
+            labels: [],
+            datasets: cfg.keys.map((k, i) => ({
+                label: k,
+                data: [],
+                borderColor: cfg.colors[i],
+                backgroundColor: cfg.colors[i] + '15',
+                borderWidth: 2,
+                fill: false,
+                tension: 0.4,
+                pointRadius: 0,
+                pointHoverRadius: 4
+            }))
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            animation: false,
+            interaction: { mode: 'index', intersect: false },
+            scales: {
+                x: { grid: { color: 'rgba(255,255,255,0.05)' }, ticks: { color: '#888', font: {size: 11} } },
+                y: { grid: { color: 'rgba(255,255,255,0.05)' }, ticks: { color: '#888', font: {size: 11} } }
+            },
+            plugins: {
+                legend: { labels: { color: '#ccc', usePointStyle: true, font: {size: 12} } },
+                tooltip: {
+                    backgroundColor: 'rgba(0,0,0,0.8)',
+                    titleColor: '#00d4ff',
+                    bodyColor: '#fff',
+                    borderColor: 'rgba(0,212,255,0.3)',
+                    borderWidth: 1
+                }
+            }
+        }
+    });
+}
+
+function setTrend(type) {
+    currentTrend = type;
+    document.querySelectorAll('.btn-trend').forEach(b => b.classList.remove('active'));
+    document.getElementById('btn-' + type.slice(0,4)).classList.add('active');
+    if (trendChart) trendChart.destroy();
+    initChart();
+}
+
+// ======== INTERACTION ========
+function simControl(action) {
+    if (action === 'start') {
+        plant.start();
+        if (!simInterval) simInterval = setInterval(simLoop, 100);
+    } else if (action === 'pause') {
+        plant.pause();
+    } else if (action === 'stop') {
+        plant.stop();
+        if (simInterval) { clearInterval(simInterval); simInterval = null; }
+    } else if (action === 'reset') {
+        plant.reset();
+        if (simInterval) { clearInterval(simInterval); simInterval = null; }
+    }
+    updateUI();
+}
+
+function setMV(tag, val) {
+    const v = parseFloat(val);
+    if (plant.setMV(tag, v)) {
+        const unit = tag.startsWith('S') ? 'Hz' : '%';
+        document.getElementById('mv-' + tag).textContent = v.toFixed(1) + unit;
+    }
+}
+
+function togglePID(tag) {
+    const newAuto = !plant.pids[tag].auto;
+    plant.setPIDMode(tag, newAuto);
+
+    const toggle = document.getElementById('toggle-' + tag);
+    const panel = document.getElementById('pid-panel-' + tag);
+    const ctrlTag = tag === 'E2' ? 'E2' : tag === 'F1' ? 'FV1' : tag === 'F2' ? 'FV2' : tag === 'L4' ? 'LV1' : tag === 'L3' ? 'S3' : 'E1';
+    const ctrl = document.getElementById('ctrl-' + ctrlTag);
+
+    if (newAuto) {
+        toggle.classList.add('on');
+        if (panel) panel.style.display = 'grid';
+        if (ctrl) ctrl.classList.add('auto-mode');
+    } else {
+        toggle.classList.remove('on');
+        if (panel) panel.style.display = 'none';
+        if (ctrl) ctrl.classList.remove('auto-mode');
+    }
+}
+
+function applyPID(tag) {
+    const Kp = parseFloat(document.getElementById('Kp-' + tag).value);
+    const Ki = parseFloat(document.getElementById('Ki-' + tag).value);
+    const Kd = parseFloat(document.getElementById('Kd-' + tag).value);
+    plant.setPIDTuning(tag, Kp, Ki, Kd);
+}
+
+// ======== SIMULATION LOOP ========
+function simLoop() {
+    plant.step();
+    updateUI();
+}
+
+// ======== UPDATE UI ========
+function updateUI() {
+    const s = plant.state, m = plant.mv;
+
+    // Status
+    document.getElementById('sim-time').textContent = plant.time.toFixed(1);
+    document.getElementById('header-xD').textContent = s.xD.toFixed(3);
+
+    const dot = document.getElementById('sim-dot');
+    const status = document.getElementById('sim-status');
+    if (plant.running && !plant.paused) {
+        dot.className = 'status-dot running';
+        status.textContent = 'Running';
+    } else if (plant.paused) {
+        dot.className = 'status-dot paused';
+        status.textContent = 'Paused';
+    } else {
+        dot.className = 'status-dot';
+        status.textContent = 'Stopped';
+    }
+
+    // Gauges
+    gaugeDefs.forEach(g => {
+        const el = document.getElementById('val-' + g.key);
+        const gauge = document.getElementById('gauge-' + g.key);
+        if (el) el.textContent = s[g.key].toFixed(g.key.startsWith('x') ? 3 : 1);
+        if (gauge) {
+            gauge.classList.remove('alarm');
+            if (g.danger && g.danger(s[g.key])) gauge.classList.add('alarm');
+        }
+    });
+
+    // Alarms
+    const alarmCard = document.getElementById('alarm-card');
+    alarmCard.classList.toggle('triggered', plant.alarms.active.size > 0);
+
+    plant.alarms.alarms.forEach(a => {
+        const row = document.getElementById('alarm-row-' + a.id);
+        const st = document.getElementById('alarm-st-' + a.id);
+        if (row && st) {
+            if (plant.alarms.active.has(a.id)) {
+                row.className = 'alarm-row danger';
+                st.className = 'alarm-status danger';
+                st.textContent = 'TRIGGERED';
+            } else {
+                row.className = 'alarm-row ok';
+                st.className = 'alarm-status ok';
+                st.textContent = 'OK';
+            }
+        }
+    });
+
+    // MV displays
+    ctrlDefs.forEach(c => {
+        const slider = document.getElementById('slider-' + c.tag);
+        const display = document.getElementById('mv-' + c.tag);
+        if (slider) slider.value = m[c.tag];
+        if (display) display.textContent = m[c.tag].toFixed(1) + c.unit;
+    });
+
+    // SV displays
+    Object.keys(plant.sv).forEach(k => {
+        const el = document.getElementById('sv-' + k);
+        if (el) el.textContent = plant.sv[k].toFixed(1);
+    });
+
+    // PFD
+    document.getElementById('pfd-cond-val').textContent = 'T5: ' + s.T5.toFixed(1) + 'C';
+    document.getElementById('pfd-col-val').textContent = 'T2: ' + s.T2.toFixed(1) + 'C';
+    document.getElementById('pfd-reb-val').textContent = 'E2: ' + m.E2.toFixed(0) + '% | T4: ' + s.T4.toFixed(1) + 'C';
+    document.getElementById('pfd-feed-val').textContent = 'L1: ' + s.L1.toFixed(0) + 'mm';
+    document.getElementById('pfd-pre-val').textContent = 'T8: ' + s.T8.toFixed(1) + 'C';
+    document.getElementById('pfd-condrec-val').textContent = 'L4: ' + s.L4.toFixed(0) + 'mm';
+    document.getElementById('pfd-over-val').textContent = 'L5: ' + s.L5.toFixed(0) + 'mm';
+    document.getElementById('pfd-botrec-val').textContent = 'L6: ' + s.L6.toFixed(0) + 'mm';
+
+    // PFD alarm colors
+    const pfdAlarms = {
+        'pfd-reb': s.T5 > 38 || s.L3 < 200 || s.L4 > 250,
+        'pfd-cond': s.T5 > 38,
+        'pfd-feed': s.L1 < 50,
+        'pfd-condrec': s.L4 > 250 || s.L4 < 50,
+        'pfd-over': s.L5 > 150,
+        'pfd-botrec': s.L6 > 150
+    };
+    Object.entries(pfdAlarms).forEach(([id, alarm]) => {
+        const el = document.getElementById(id);
+        if (el) el.classList.toggle('alarm', alarm);
+    });
+
+    // Chart
+    updateChart();
+}
+
+function updateChart() {
+    if (!trendChart || plant.history.length < 2) return;
+
+    const cfg = trendConfig[currentTrend];
+    const recent = plant.history.slice(-100);
+
+    trendChart.data.labels = recent.map(h => h.time.toFixed(0));
+    cfg.keys.forEach((k, i) => {
+        trendChart.data.datasets[i].data = recent.map(h => h[k]);
+    });
+
+    trendChart.update('none');
+}
+
+// ======== INIT ========
+initUI();
+initChart();
+updateUI();
+
+console.log('PIEAS Distillation Simulator loaded. Click START to begin.');
+</script>
+</body>
+</html>
